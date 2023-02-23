@@ -34,15 +34,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v2
       # Action specific for Rust, installs Rust toolchain and clippy with rustup
-      - name: Install stable toolchain - clippy
-        uses: actions-rs/toolchain@v1
-        with:
-          components: clippy
-          toolchain: stable
-          override: true
+      - run: rustup component add clippy
       # Rust specifict action
       # Lints code base and display warnings
-      - name: Run clippy
+      - name: Clippy check
         uses: actions-rs/clippy-check@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
