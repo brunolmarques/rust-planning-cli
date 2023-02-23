@@ -1,5 +1,5 @@
 name: Planning CLI - CI
-run-name: Continuous Integration Pipeline, run ${{ GITHUB_RUN_NUMBER }}
+run-name: Continuous Integration Pipeline, run id $GITHUB_RUN_ID and number $GITHUB_RUN_NUMBER
 
 on: push
 
