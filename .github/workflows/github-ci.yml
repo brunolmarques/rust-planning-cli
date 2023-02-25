@@ -36,11 +36,21 @@ jobs:
         uses: actions/checkout@v2
       # Action specific for Rust, installs Rust toolchain and clippy with rustup
       - run: rustup component add clippy
-      # Rust specifict action
       # Lints code base and display warnings
       - name: Clippy check
         uses: actions-rs/clippy-check@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           args: --all-targets --all-features -- -D warnings
+  
+  tarpaulin:
+    name: Code coverage
+    runs-on: ubuntu-latest
+    steps:
+      # Runs cargo-tarpualin to assess code coverage
+      - name: Checkout repository
+        uses: actions-rs/tarpaulin@v0.1
+        with:
+          version: '0.15.0'
+          args: '--all --ignore-tests --avoid-cfg-tarpaulin'
 
