@@ -11,9 +11,7 @@ pub struct Epic {
 
 impl Epic {
     pub fn new(name: String, description: String) -> Self {
-        Epic {
-            stories: vec![]
-        }
+        Epic { stories: vec![] }
     }
 }
 

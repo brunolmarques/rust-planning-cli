@@ -24,7 +24,7 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: fmt
-          args: --all -- --check
+          args: '--all -- --check'
 
   clippy:
     permissions: write-all
@@ -41,7 +41,7 @@ jobs:
         uses: actions-rs/clippy-check@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          args: --all-targets --all-features -- -D warnings
+          args: '--all-targets --all-features -- -D warnings'
   
   tarpaulin:
     name: Code coverage
