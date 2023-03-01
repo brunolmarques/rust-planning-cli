@@ -47,12 +47,19 @@ jobs:
     name: Code coverage
     runs-on: ubuntu-latest
     steps:
-      # Runs cargo-tarpualin to assess code coverage
       - name: Checkout repository
+        uses: actions/checkout@v3
+      - name: Install stable toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+      # Runs cargo-tarpualin to assess code coverage
+      - name: Run cargo-tarpaulin
         uses: actions-rs/tarpaulin@v0.1
         with:
           version: '0.15.0'
-          args: '--all --all-features'
+          args: '--all --avoid-cfg-tarpaulin'
 
   test:
     name: Code Tests
