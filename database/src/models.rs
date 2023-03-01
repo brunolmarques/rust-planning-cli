@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 pub enum Status {
     Open,
     InProgress,
@@ -30,6 +32,7 @@ impl Story {
 }
 
 pub struct DBState {
-    // This struct represents the entire db state which includes the last_item_id, epics, and stories
-    // TODO: add fields (make sure the fields are public)
+    pub last_item_id: u32,
+    pub epics: HashMap<u32, Epic>,
+    pub stories: HashMap<u32, Story>,
 }
