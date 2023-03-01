@@ -52,7 +52,7 @@ jobs:
         uses: actions-rs/tarpaulin@v0.1
         with:
           version: '0.15.0'
-          args: '--all --ignore-tests --avoid-cfg-tarpaulin'
+          args: '--all --ignore-tests'
 
   test:
     name: Code Tests
