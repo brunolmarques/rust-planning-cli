@@ -1,16 +1,16 @@
-use anyhow::{Result, anyhow, Context};
+use anyhow::{anyhow, Context, Result};
 use std::fs;
 
-use crate::models::{DBState, Epic, Story, Status};
+use crate::models::{DBState, Epic, Status, Story};
 
 pub struct JiraDatabase {
-    database: Box<dyn Database>
+    database: Box<dyn Database>,
 }
 
 impl JiraDatabase {
     pub fn new(file_path: String) -> Self {
         Self {
-            database: Box::new(JSONFileDatabase { file_path })
+            database: Box::new(JSONFileDatabase { file_path }),
         }
     }
 
@@ -18,42 +18,50 @@ impl JiraDatabase {
         self.database.read_db()
     }
 
-    pub fn get_epic<'a>(&'a self, db: &'a mut DBState, epic_id: &u32) -> Result<&mut Epic, anyhow::Error> {
-        let ep = db.epics.get_mut(&epic_id).ok_or("Invalid `epic_id`!");
+    pub fn get_epic<'a>(
+        &'a self,
+        db: &'a mut DBState,
+        epic_id: &u32,
+    ) -> Result<&mut Epic, anyhow::Error> {
+        let ep = db.epics.get_mut(epic_id).ok_or("Invalid `epic_id`!");
 
         match ep {
             Ok(x) => Ok(x),
-            Err(e) => Err(anyhow!("Could not get epic, error cause: {}", e))
+            Err(e) => Err(anyhow!("Could not get epic, error cause: {}", e)),
         }
     }
 
-    pub fn get_story<'a>(&'a self, db: &'a mut DBState, story_id: &u32) -> Result<&mut Story, anyhow::Error> {
-        let st = db.stories.get_mut(&story_id).ok_or("Invalid `story_id`!");
+    pub fn get_story<'a>(
+        &'a self,
+        db: &'a mut DBState,
+        story_id: &u32,
+    ) -> Result<&mut Story, anyhow::Error> {
+        let st = db.stories.get_mut(story_id).ok_or("Invalid `story_id`!");
 
         match st {
             Ok(x) => Ok(x),
-            Err(e) => Err(anyhow!("Could not get story, error cause: {}", e))
+            Err(e) => Err(anyhow!("Could not get story, error cause: {}", e)),
         }
     }
-    
+
     pub fn create_epic(&self, epic: Epic) -> Result<u32> {
         // get DB
         let mut db = self.read_db()?;
-        
+
         // get last_item_id
         let new_count = db.last_item_id + 1;
-        
+
         // add new epic to existing DB
         db.epics.insert(new_count, epic);
-        
+
         // update last_item_id
         db.last_item_id = new_count;
-        
+
         // write updated DB back to storage
         self.database.write_db(&db)?;
         Ok(new_count)
     }
-    
+
     pub fn create_story(&self, story: Story, epic_id: u32) -> Result<u32> {
         // get DB
         let mut db = self.database.read_db()?;
@@ -64,7 +72,7 @@ impl JiraDatabase {
         // add story id to epic if epic exists
         let mut ep = self.get_epic(&mut db, &epic_id)?;
         ep.stories.push(new_count);
-         
+
         // add new story to DB
         db.stories.insert(new_count, story);
 
@@ -75,46 +83,52 @@ impl JiraDatabase {
         self.database.write_db(&db)?;
         Ok(new_count)
     }
-    
+
     pub fn delete_epic(&self, epic_id: u32) -> Result<()> {
         // get DB
         let mut db = self.database.read_db()?;
 
-        // check if epic_id exists
-        let mut ep = self.get_epic(&mut db, &epic_id)?;
-        db.epics.remove(&epic_id);
+        // check if epic exists
+        self.get_epic(&mut db, &epic_id)?;
+
+        // remove epic and its stories
+        if let Some(epic) = db.epics.remove(&epic_id) {
+            for story_id in epic.stories.iter() {
+                db.stories.remove(story_id);
+            }
+        };
 
         // write update DB back to storage
         self.database.write_db(&db)?;
         Ok(())
     }
-    
-    pub fn delete_story(&self,epic_id: u32, story_id: u32) -> Result<()> {
+
+    pub fn delete_story(&self, epic_id: u32, story_id: u32) -> Result<()> {
         // get DB
         let mut db = self.database.read_db()?;
 
-        // delete story
-        db.epics.remove(&epic_id);
-
-        // check if story is within DBState
-        self.get_story(&mut db, &story_id)?;
-
-        // delete story from epic if epic and story exist
-        let mut ep = self.get_epic(&mut db, &epic_id)?;
-        
-        let index = ep.stories.iter().position(|&x| x == story_id)
+        // check if epic is within DBState and remove story
+        let ep = self.get_epic(&mut db, &epic_id)?;
+        let index = ep
+            .stories
+            .iter()
+            .position(|&x| x == story_id)
             .ok_or("`story_id` does not exist within epic!");
 
         match index {
             Ok(i) => ep.stories.remove(i),
-            Err(e) => return Err(anyhow!("Could not delete story, error cause: {}", e))
-        };        
+            Err(e) => return Err(anyhow!("Could not delete story, error cause: {}", e)),
+        };
+
+        // check if story is within DBState and remove it
+        self.get_story(&mut db, &story_id)?;
+        db.stories.remove(&story_id);
 
         // write update DB back to storage
         self.database.write_db(&db)?;
         Ok(())
     }
-    
+
     pub fn update_epic_status(&self, epic_id: u32, status: Status) -> Result<()> {
         // get DB
         let mut db = self.database.read_db()?;
@@ -127,7 +141,7 @@ impl JiraDatabase {
         self.database.write_db(&db)?;
         Ok(())
     }
-    
+
     pub fn update_story_status(&self, story_id: u32, status: Status) -> Result<()> {
         // get DB
         let mut db = self.read_db()?;
@@ -148,20 +162,20 @@ trait Database {
 }
 
 struct JSONFileDatabase {
-    pub file_path: String
+    pub file_path: String,
 }
 
 impl Database for JSONFileDatabase {
     fn read_db(&self) -> Result<DBState> {
         let db_content = fs::read_to_string(&self.file_path)?;
         serde_json::from_str(&db_content)
-            .with_context(|| format!("Path could not be deserialized!"))
+            .with_context(|| "Path could not be deserialized!".to_string())
     }
 
     fn write_db(&self, db_state: &DBState) -> Result<()> {
-        let serialized = serde_json::to_vec(db_state)
-            .with_context(||format!("Could not serialize DBState"))?;
-        fs::write(&self.file_path, &serialized)?;
+        let serialized =
+            serde_json::to_vec(db_state).with_context(|| "Could not serialize DBState".to_string())?;
+        fs::write(&self.file_path, serialized)?;
         Ok(())
     }
 }
@@ -170,21 +184,21 @@ pub mod test_utils {
     use std::{cell::RefCell, collections::HashMap};
 
     use super::*;
-    
+
     pub struct MockDB {
-        last_written_state: RefCell<DBState>
+        last_written_state: RefCell<DBState>,
     }
 
     impl MockDB {
         pub fn new() -> Self {
-            Self { last_written_state: RefCell::new(
-                DBState { 
-                    last_item_id: 0, 
-                    epics: HashMap::new(), 
-                    stories: HashMap::new() 
-                }) 
+            Self {
+                last_written_state: RefCell::new(DBState {
+                    last_item_id: 0,
+                    epics: HashMap::new(),
+                    stories: HashMap::new(),
+                }),
             }
-        }    
+        }
     }
 
     impl Database for MockDB {
@@ -203,16 +217,18 @@ pub mod test_utils {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::test_utils::MockDB;
+    use super::*;
 
     #[test]
     fn create_epic_should_work() {
-        let db = JiraDatabase { database: Box::new(MockDB::new()) };
+        let db = JiraDatabase {
+            database: Box::new(MockDB::new()),
+        };
         let epic = Epic::new("".to_owned(), "".to_owned());
 
         let result = db.create_epic(epic.clone());
-        
+
         assert_eq!(result.is_ok(), true);
 
         let id = result.unwrap();
@@ -227,7 +243,9 @@ mod tests {
 
     #[test]
     fn create_story_should_error_if_invalid_epic_id() {
-        let db = JiraDatabase { database: Box::new(MockDB::new()) };
+        let db = JiraDatabase {
+            database: Box::new(MockDB::new()),
+        };
         let story = Story::new("".to_owned(), "".to_owned());
 
         let non_existent_epic_id = 999;
@@ -238,7 +256,9 @@ mod tests {
 
     #[test]
     fn create_story_should_work() {
-        let db = JiraDatabase { database: Box::new(MockDB::new()) };
+        let db = JiraDatabase {
+            database: Box::new(MockDB::new()),
+        };
         let epic = Epic::new("".to_owned(), "".to_owned());
         let story = Story::new("".to_owned(), "".to_owned());
 
@@ -247,7 +267,6 @@ mod tests {
 
         let epic_id = result.unwrap();
 
-        // TODO: fix this error by deriving the appropriate traits for Story
         let result = db.create_story(story.clone(), epic_id);
         assert_eq!(result.is_ok(), true);
 
@@ -258,13 +277,18 @@ mod tests {
 
         assert_eq!(id, expected_id);
         assert_eq!(db_state.last_item_id, expected_id);
-        assert_eq!(db_state.epics.get(&epic_id).unwrap().stories.contains(&id), true);
+        assert_eq!(
+            db_state.epics.get(&epic_id).unwrap().stories.contains(&id),
+            true
+        );
         assert_eq!(db_state.stories.get(&id), Some(&story));
     }
 
     #[test]
     fn delete_epic_should_error_if_invalid_epic_id() {
-        let db = JiraDatabase { database: Box::new(MockDB::new()) };
+        let db = JiraDatabase {
+            database: Box::new(MockDB::new()),
+        };
 
         let non_existent_epic_id = 999;
 
@@ -274,7 +298,9 @@ mod tests {
 
     #[test]
     fn delete_epic_should_work() {
-        let db = JiraDatabase { database: Box::new(MockDB::new()) };
+        let db = JiraDatabase {
+            database: Box::new(MockDB::new()),
+        };
         let epic = Epic::new("".to_owned(), "".to_owned());
         let story = Story::new("".to_owned(), "".to_owned());
 
@@ -302,7 +328,9 @@ mod tests {
 
     #[test]
     fn delete_story_should_error_if_invalid_epic_id() {
-        let db = JiraDatabase { database: Box::new(MockDB::new()) };
+        let db = JiraDatabase {
+            database: Box::new(MockDB::new()),
+        };
         let epic = Epic::new("".to_owned(), "".to_owned());
         let story = Story::new("".to_owned(), "".to_owned());
 
@@ -313,18 +341,20 @@ mod tests {
 
         let result = db.create_story(story, epic_id);
         assert_eq!(result.is_ok(), true);
-        
+
         let story_id = result.unwrap();
 
         let non_existent_epic_id = 999;
-        
+
         let result = db.delete_story(non_existent_epic_id, story_id);
         assert_eq!(result.is_err(), true);
     }
 
     #[test]
     fn delete_story_should_error_if_story_not_found_in_epic() {
-        let db = JiraDatabase { database: Box::new(MockDB::new()) };
+        let db = JiraDatabase {
+            database: Box::new(MockDB::new()),
+        };
         let epic = Epic::new("".to_owned(), "".to_owned());
         let story = Story::new("".to_owned(), "".to_owned());
 
@@ -337,14 +367,16 @@ mod tests {
         assert_eq!(result.is_ok(), true);
 
         let non_existent_story_id = 999;
-        
+
         let result = db.delete_story(epic_id, non_existent_story_id);
         assert_eq!(result.is_err(), true);
     }
 
     #[test]
     fn delete_story_should_work() {
-        let db = JiraDatabase { database: Box::new(MockDB::new()) };
+        let db = JiraDatabase {
+            database: Box::new(MockDB::new()),
+        };
         let epic = Epic::new("".to_owned(), "".to_owned());
         let story = Story::new("".to_owned(), "".to_owned());
 
@@ -366,13 +398,23 @@ mod tests {
         let expected_last_id = 2;
 
         assert_eq!(db_state.last_item_id, expected_last_id);
-        assert_eq!(db_state.epics.get(&epic_id).unwrap().stories.contains(&story_id), false);
+        assert_eq!(
+            db_state
+                .epics
+                .get(&epic_id)
+                .unwrap()
+                .stories
+                .contains(&story_id),
+            false
+        );
         assert_eq!(db_state.stories.get(&story_id), None);
     }
 
     #[test]
     fn update_epic_status_should_error_if_invalid_epic_id() {
-        let db = JiraDatabase { database: Box::new(MockDB::new()) };
+        let db = JiraDatabase {
+            database: Box::new(MockDB::new()),
+        };
 
         let non_existent_epic_id = 999;
 
@@ -382,11 +424,13 @@ mod tests {
 
     #[test]
     fn update_epic_status_should_work() {
-        let db = JiraDatabase { database: Box::new(MockDB::new()) };
+        let db = JiraDatabase {
+            database: Box::new(MockDB::new()),
+        };
         let epic = Epic::new("".to_owned(), "".to_owned());
 
         let result = db.create_epic(epic);
-        
+
         assert_eq!(result.is_ok(), true);
 
         let epic_id = result.unwrap();
@@ -402,7 +446,9 @@ mod tests {
 
     #[test]
     fn update_story_status_should_error_if_invalid_story_id() {
-        let db = JiraDatabase { database: Box::new(MockDB::new()) };
+        let db = JiraDatabase {
+            database: Box::new(MockDB::new()),
+        };
 
         let non_existent_story_id = 999;
 
@@ -412,7 +458,9 @@ mod tests {
 
     #[test]
     fn update_story_status_should_work() {
-        let db = JiraDatabase { database: Box::new(MockDB::new()) };
+        let db = JiraDatabase {
+            database: Box::new(MockDB::new()),
+        };
         let epic = Epic::new("".to_owned(), "".to_owned());
         let story = Story::new("".to_owned(), "".to_owned());
 
@@ -430,19 +478,24 @@ mod tests {
 
         let db_state = db.read_db().unwrap();
 
-        assert_eq!(db_state.stories.get(&story_id).unwrap().status, Status::Closed);
+        assert_eq!(
+            db_state.stories.get(&story_id).unwrap().status,
+            Status::Closed
+        );
     }
 
     mod database {
         use std::collections::HashMap;
-        use std::fs::{remove_file};
+        use std::fs::remove_file;
         use std::io::Write;
 
         use super::*;
 
         #[test]
         fn read_db_should_fail_with_invalid_path() {
-            let db = JSONFileDatabase { file_path: "INVALID_PATH".to_owned() };
+            let db = JSONFileDatabase {
+                file_path: "INVALID_PATH".to_owned(),
+            };
             assert_eq!(db.read_db().is_err(), true);
         }
 
@@ -458,7 +511,9 @@ mod tests {
             let path = tmpfile.into_temp_path();
             path.persist(&file_path).unwrap();
 
-            let db = JSONFileDatabase { file_path: file_path.clone() };
+            let db = JSONFileDatabase {
+                file_path: file_path.clone(),
+            };
 
             let result = db.read_db();
 
@@ -479,7 +534,9 @@ mod tests {
             let path = tmpfile.into_temp_path();
             path.persist(&file_path).unwrap();
 
-            let db = JSONFileDatabase { file_path: file_path.clone() };
+            let db = JSONFileDatabase {
+                file_path: file_path.clone(),
+            };
 
             let result = db.read_db();
 
@@ -500,10 +557,21 @@ mod tests {
             let path = tmpfile.into_temp_path();
             path.persist(&file_path).unwrap();
 
-            let db = JSONFileDatabase { file_path: file_path.clone() };
+            let db = JSONFileDatabase {
+                file_path: file_path.clone(),
+            };
 
-            let story = Story { name: "epic 1".to_owned(), description: "epic 1".to_owned(), status: Status::Open };
-            let epic = Epic { name: "epic 1".to_owned(), description: "epic 1".to_owned(), status: Status::Open, stories: vec![2] };
+            let story = Story {
+                name: "epic 1".to_owned(),
+                description: "epic 1".to_owned(),
+                status: Status::Open,
+            };
+            let epic = Epic {
+                name: "epic 1".to_owned(),
+                description: "epic 1".to_owned(),
+                status: Status::Open,
+                stories: vec![2],
+            };
 
             let mut stories = HashMap::new();
             stories.insert(2, story);
@@ -511,7 +579,11 @@ mod tests {
             let mut epics = HashMap::new();
             epics.insert(1, epic);
 
-            let state = DBState { last_item_id: 2, epics, stories };
+            let state = DBState {
+                last_item_id: 2,
+                epics,
+                stories,
+            };
 
             let write_result = db.write_db(&state);
             let read_result = db.read_db().unwrap();
