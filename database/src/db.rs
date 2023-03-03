@@ -1,6 +1,5 @@
-use std::fs;
-
 use anyhow::{anyhow, Context, Result};
+use std::fs;
 
 use crate::models::{DBState, Epic, Status, Story};
 
@@ -108,11 +107,12 @@ impl JiraDatabase {
             .stories
             .iter()
             .position(|&x| x == story_id)
-            .ok_or_else(|| {
-                anyhow!(
-                    "Could not delete story, error cause: `story_id` does not exist within epic."
-                )
-            });
+            .ok_or("`story_id` does not exist within epic!");
+
+        match index {
+            Ok(i) => ep.stories.remove(i),
+            Err(e) => return Err(anyhow!("Could not delete story, error cause: {}", e)),
+        };
 
         // check if story is within DBState and remove it
         self.get_story(&mut db, &story_id)?;
