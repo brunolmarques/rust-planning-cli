@@ -1,5 +1,6 @@
-use anyhow::{anyhow, Context, Result};
 use std::fs;
+
+use anyhow::{anyhow, Context, Result};
 
 use crate::models::{DBState, Epic, Status, Story};
 
@@ -23,12 +24,9 @@ impl JiraDatabase {
         db: &'a mut DBState,
         epic_id: &u32,
     ) -> Result<&mut Epic, anyhow::Error> {
-        let ep = db.epics.get_mut(epic_id).ok_or("Invalid `epic_id`!");
-
-        match ep {
-            Ok(x) => Ok(x),
-            Err(e) => Err(anyhow!("Could not get epic, error cause: {}", e)),
-        }
+        db.epics
+            .get_mut(epic_id)
+            .ok_or_else(|| anyhow!("Could not get epic, error cause: Invalid `epic_id`."))
     }
 
     pub fn get_story<'a>(
@@ -36,12 +34,9 @@ impl JiraDatabase {
         db: &'a mut DBState,
         story_id: &u32,
     ) -> Result<&mut Story, anyhow::Error> {
-        let st = db.stories.get_mut(story_id).ok_or("Invalid `story_id`!");
-
-        match st {
-            Ok(x) => Ok(x),
-            Err(e) => Err(anyhow!("Could not get story, error cause: {}", e)),
-        }
+        db.stories
+            .get_mut(story_id)
+            .ok_or_else(|| anyhow!("Could not get story, error cause: Invalid `story_id`."))
     }
 
     pub fn create_epic(&self, epic: Epic) -> Result<u32> {
@@ -113,12 +108,11 @@ impl JiraDatabase {
             .stories
             .iter()
             .position(|&x| x == story_id)
-            .ok_or("`story_id` does not exist within epic!");
-
-        match index {
-            Ok(i) => ep.stories.remove(i),
-            Err(e) => return Err(anyhow!("Could not delete story, error cause: {}", e)),
-        };
+            .ok_or_else(|| {
+                anyhow!(
+                    "Could not delete story, error cause: `story_id` does not exist within epic."
+                )
+            });
 
         // check if story is within DBState and remove it
         self.get_story(&mut db, &story_id)?;
@@ -173,8 +167,8 @@ impl Database for JSONFileDatabase {
     }
 
     fn write_db(&self, db_state: &DBState) -> Result<()> {
-        let serialized =
-            serde_json::to_vec(db_state).with_context(|| "Could not serialize DBState".to_string())?;
+        let serialized = serde_json::to_vec(db_state)
+            .with_context(|| "Could not serialize DBState".to_string())?;
         fs::write(&self.file_path, serialized)?;
         Ok(())
     }
