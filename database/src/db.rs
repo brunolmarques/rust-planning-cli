@@ -1,4 +1,4 @@
-use anyhow::{Result, Context};
+use anyhow::{Result, anyhow, Context};
 use std::fs;
 
 use crate::models::{DBState, Epic, Story, Status};
@@ -17,82 +17,128 @@ impl JiraDatabase {
     pub fn read_db(&self) -> Result<DBState> {
         self.database.read_db()
     }
+
+    pub fn get_epic<'a>(&'a self, db: &'a mut DBState, epic_id: &u32) -> Result<&mut Epic, anyhow::Error> {
+        let ep = db.epics.get_mut(&epic_id).ok_or("Invalid `epic_id`!");
+
+        match ep {
+            Ok(x) => Ok(x),
+            Err(e) => Err(anyhow!("Could not get epic, error cause: {}", e))
+        }
+    }
+
+    pub fn get_story<'a>(&'a self, db: &'a mut DBState, story_id: &u32) -> Result<&mut Story, anyhow::Error> {
+        let st = db.stories.get_mut(&story_id).ok_or("Invalid `story_id`!");
+
+        match st {
+            Ok(x) => Ok(x),
+            Err(e) => Err(anyhow!("Could not get story, error cause: {}", e))
+        }
+    }
     
     pub fn create_epic(&self, epic: Epic) -> Result<u32> {
         // get DB
-        let mut DB = self.read_db()?;
+        let mut db = self.read_db()?;
         
         // get last_item_id
-        let new_count = DB.last_item_id + 1;
+        let new_count = db.last_item_id + 1;
         
         // add new epic to existing DB
-        DB.epics.insert(new_count, epic);
+        db.epics.insert(new_count, epic);
         
         // update last_item_id
-        DB.last_item_id = new_count;
+        db.last_item_id = new_count;
         
         // write updated DB back to storage
-        self.database.write_db(&DB);
+        self.database.write_db(&db)?;
         Ok(new_count)
     }
     
     pub fn create_story(&self, story: Story, epic_id: u32) -> Result<u32> {
         // get DB
-        let mut DB = self.database.read_db()?;
+        let mut db = self.database.read_db()?;
 
         // get last_item_id
-        let new_count = DB.last_item_id + 1;
+        let new_count = db.last_item_id + 1;
 
-        // add new story to DB
-        DB.stories.insert(new_count, story);
-
-        // add story id to epic
-        let mut ep = DB.epics.get_mut(&epic_id).unwrap();
+        // add story id to epic if epic exists
+        let mut ep = self.get_epic(&mut db, &epic_id)?;
         ep.stories.push(new_count);
+         
+        // add new story to DB
+        db.stories.insert(new_count, story);
 
         // update last_item_id
-        DB.last_item_id = new_count;
+        db.last_item_id = new_count;
 
         // write update DB back to storage
-        self.database.write_db(&DB);
+        self.database.write_db(&db)?;
         Ok(new_count)
     }
     
     pub fn delete_epic(&self, epic_id: u32) -> Result<()> {
         // get DB
-        let mut DB = self.database.read_db()?;
+        let mut db = self.database.read_db()?;
 
-        // delete epic
-        DB.epics.remove(&epic_id);
+        // check if epic_id exists
+        let mut ep = self.get_epic(&mut db, &epic_id)?;
+        db.epics.remove(&epic_id);
 
         // write update DB back to storage
-        self.database.write_db(&DB);
+        self.database.write_db(&db)?;
         Ok(())
     }
     
     pub fn delete_story(&self,epic_id: u32, story_id: u32) -> Result<()> {
         // get DB
-        let mut DB = self.database.read_db()?;
+        let mut db = self.database.read_db()?;
 
         // delete story
-        DB.epics.remove(&epic_id);
+        db.epics.remove(&epic_id);
 
-        // remove story from epic
-        let mut ep = DB.epics.get_mut(&epic_id).unwrap();
-        let index = ep.stories.iter().position(|&x| x == story_id).unwrap();
-        ep.stories.remove(index);
+        // check if story is within DBState
+        self.get_story(&mut db, &story_id)?;
+
+        // delete story from epic if epic and story exist
+        let mut ep = self.get_epic(&mut db, &epic_id)?;
+        
+        let index = ep.stories.iter().position(|&x| x == story_id)
+            .ok_or("`story_id` does not exist within epic!");
+
+        match index {
+            Ok(i) => ep.stories.remove(i),
+            Err(e) => return Err(anyhow!("Could not delete story, error cause: {}", e))
+        };        
 
         // write update DB back to storage
-        self.database.write_db(&DB);
+        self.database.write_db(&db)?;
         Ok(())
     }
     
     pub fn update_epic_status(&self, epic_id: u32, status: Status) -> Result<()> {
-        todo!()
+        // get DB
+        let mut db = self.database.read_db()?;
+
+        // get epic and change status
+        let mut ep = self.get_epic(&mut db, &epic_id)?;
+        ep.status = status;
+
+        // write DB back to storage
+        self.database.write_db(&db)?;
+        Ok(())
     }
     
     pub fn update_story_status(&self, story_id: u32, status: Status) -> Result<()> {
-        todo!()
+        // get DB
+        let mut db = self.read_db()?;
+
+        // get story and update status
+        let mut st = self.get_story(&mut db, &story_id)?;
+        st.status = status;
+
+        // write DB back to storage
+        self.database.write_db(&db)?;
+        Ok(())
     }
 }
 
@@ -165,7 +211,6 @@ mod tests {
         let db = JiraDatabase { database: Box::new(MockDB::new()) };
         let epic = Epic::new("".to_owned(), "".to_owned());
 
-        // TODO: fix this error by deriving the appropriate traits for Epic
         let result = db.create_epic(epic.clone());
         
         assert_eq!(result.is_ok(), true);
