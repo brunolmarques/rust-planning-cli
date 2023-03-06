@@ -23,7 +23,19 @@ impl Page for HomePage {
         println!("----------------------------- EPICS -----------------------------");
         println!("     id     |               name               |      status      ");
 
-        // TODO: print out epics using get_column_string(). also make sure the epics are sorted by id
+        // get epics HashMap and sort it
+        let db = self.db.read_db()?;
+        let sorted_epics_ids = db.epics.keys().sorted();
+        
+        // print each epic id, name and status
+        sorted_epics_ids.for_each(|id| {
+            println!(
+                "{i} | {name} | {stat}",
+                i = get_column_string(&id.to_string(), 11), 
+                name = get_column_string(&db.epics.get(id).unwrap().name, 32),
+                stat = get_column_string(&db.epics.get(id).unwrap().status.to_string(), 17)
+            )
+        });
 
         println!();
         println!();
@@ -34,8 +46,23 @@ impl Page for HomePage {
     }
 
     fn handle_input(&self, input: &str) -> Result<Option<Action>> {
-        todo!() // match against the user input and return the corresponding action. If the user input was invalid return None.
+        // get possible epic ids
+        let epics_map = self.db.read_db()?.epics;
+
+        match input {
+            "q|Q" => Ok(Some(Action::Exit)),
+            "c|C" => Ok(Some(Action::CreateEpic)),
+            input => {
+                if let Ok(epic_id) = input.parse::<u32>() {
+                    if epics_map.contains_key(&epic_id) {
+                        return Ok(Some(Action::NavigateToEpicDetail { epic_id: epic_id }));
+                    }
+                }
+                Ok(None)
+            }
+        }
     }
+        
 }
 
 pub struct EpicDetail {
