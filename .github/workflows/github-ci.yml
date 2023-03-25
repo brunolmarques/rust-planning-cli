@@ -1,0 +1,90 @@
+name: Planning CLI - CI
+run-name: Continuous Integration Pipeline Running!
+
+on: push
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  fmt:
+    name: Rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      # Checkout creates a copy of the repo in the runner, so code can be accessed
+      - uses: actions/checkout@v2
+      # Action specific for Rust, installs Rust toolchain and rustfmt with rustup
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+          components: rustfmt
+      # Allows GitHub actions to run specific `cargo` commands
+      # Runs a format check on cargo    
+      - uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: '--all -- --check'
+
+  clippy:
+    permissions: write-all
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      # Checkout creates a copy of the repo in the runner, so code can be accessed
+      - name: Checkout repository
+        uses: actions/checkout@v2
+      # Action specific for Rust, installs Rust toolchain and clippy with rustup
+      - run: rustup component add clippy
+      # Lints code base and display warnings
+      - name: Clippy check
+        uses: actions-rs/clippy-check@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          args: '--all-targets --all-features -- -D warnings --explain LINT'
+  
+  tarpaulin:
+    name: Code coverage
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      - name: Install stable toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+      # Runs cargo-tarpualin to assess code coverage
+      - name: Run cargo-tarpaulin
+        uses: actions-rs/tarpaulin@v0.1
+        with:
+          version: '0.15.0'
+          args: '--all'
+
+  test:
+    name: Code Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      - name: Cache dependencies
+        id: cache-dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
+      - name: Install stable toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+      - name: Run cargo test
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: '--all --tests'
+
