@@ -69,8 +69,6 @@ fn delete_epic_prompt() -> bool {
 
     let decision = get_user_input();
 
-    println!("{}", decision);
-
     if decision.trim().eq("Y") {
         return true;
     }
@@ -80,13 +78,9 @@ fn delete_epic_prompt() -> bool {
 
 fn delete_story_prompt() -> bool {
     println!("----------------------------");
+    println!("Are you sure you want to delete this story? [Y/n]:");
 
     let decision = get_user_input();
-
-    println!(
-        "Are you sure you want to delete this story? [Y/n]: {}",
-        decision
-    );
 
     if decision.trim().eq("Y") {
         return true;

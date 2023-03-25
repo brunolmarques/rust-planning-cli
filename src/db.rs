@@ -64,7 +64,7 @@ impl JiraDatabase {
         let new_count = db.last_item_id + 1;
 
         // add story id to epic if epic exists
-        let mut ep = self.get_epic(&mut db, &epic_id)?;
+        let ep = self.get_epic(&mut db, &epic_id)?;
         ep.stories.push(new_count);
 
         // add new story to DB
@@ -155,7 +155,7 @@ pub trait Database {
     fn write_db(&self, db_state: &DBState) -> Result<()>;
 }
 
-struct JSONFileDatabase {
+pub struct JSONFileDatabase {
     pub file_path: String,
 }
 

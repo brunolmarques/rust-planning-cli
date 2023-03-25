@@ -1,12 +1,16 @@
-use anyhow::{anyhow, Result, Context, Ok};
+use anyhow::{anyhow, Context, Ok, Result};
 use std::rc::Rc;
 
-use crate::{ui::{Page, HomePage, EpicDetail, StoryDetail, Prompts}, db::JiraDatabase, models::Action};
+use crate::{
+    db::JiraDatabase,
+    models::Action,
+    ui::{EpicDetail, HomePage, Page, Prompts, StoryDetail},
+};
 
 pub struct Navigator {
     pages: Vec<Box<dyn Page>>,
     prompts: Prompts,
-    db: Rc<JiraDatabase>
+    db: Rc<JiraDatabase>,
 }
 
 impl Navigator {
@@ -14,7 +18,7 @@ impl Navigator {
         Self {
             pages: vec![Box::new(HomePage { db: Rc::clone(&db) })],
             prompts: Prompts::new(),
-            db: db
+            db,
         }
     }
 
@@ -25,69 +29,84 @@ impl Navigator {
     pub fn handle_action(&mut self, action: Action) -> Result<()> {
         match action {
             Action::NavigateToEpicDetail { epic_id } => {
-                let page_view = EpicDetail { epic_id: epic_id, db: Rc::clone(&self.db) };
-                
+                let page_view = EpicDetail {
+                    epic_id,
+                    db: Rc::clone(&self.db),
+                };
+
                 self.pages.push(Box::new(page_view));
             }
             Action::NavigateToStoryDetail { epic_id, story_id } => {
-                let page_view = StoryDetail { 
-                                                epic_id: epic_id, 
-                                                story_id: story_id, 
-                                                db: Rc::clone(&self.db) 
-                                            };
-                
+                let page_view = StoryDetail {
+                    epic_id,
+                    story_id,
+                    db: Rc::clone(&self.db),
+                };
+
                 self.pages.push(Box::new(page_view));
             }
             Action::NavigateToPreviousPage => {
-                if !self.pages.is_empty() { self.pages.pop(); }
+                if !self.pages.is_empty() {
+                    self.pages.pop();
+                }
             }
             Action::CreateEpic => {
                 let new_epic = (self.prompts.create_epic)();
-                
-                self.db.create_epic(new_epic)
+
+                self.db
+                    .create_epic(new_epic)
                     .with_context(|| anyhow!("Failed to create epic!"))?;
             }
             Action::UpdateEpicStatus { epic_id } => {
                 let new_status = (self.prompts.update_status)();
-                
+
                 if let Some(status) = new_status {
-                    self.db.update_epic_status(epic_id, status)
+                    self.db
+                        .update_epic_status(epic_id, status)
                         .with_context(|| anyhow!("Failed to update epic status!"))?;
                 };
             }
             Action::DeleteEpic { epic_id } => {
-                let del_epic = (self.prompts.delete_epic)();
-
-                if del_epic {
-                    self.db.delete_epic(epic_id)
+                if (self.prompts.delete_epic)() {
+                    self.db
+                        .delete_epic(epic_id)
                         .with_context(|| anyhow!("Failed to delete epic!"))?;
+
+                    if !self.pages.is_empty() {
+                        self.pages.pop();
+                    }
                 }
             }
             Action::CreateStory { epic_id } => {
                 let new_story = (self.prompts.create_story)();
 
-                self.db.create_story(new_story, epic_id)
+                self.db
+                    .create_story(new_story, epic_id)
                     .with_context(|| anyhow!("Failed to create story!"))?;
             }
             Action::UpdateStoryStatus { story_id } => {
                 let status_update = (self.prompts.update_status)();
 
                 if let Some(status) = status_update {
-                    self.db.update_story_status(story_id, status)
+                    self.db
+                        .update_story_status(story_id, status)
                         .with_context(|| anyhow!("Failed to update story status!"))?;
                 }
             }
             Action::DeleteStory { epic_id, story_id } => {
-                let decision = (self.prompts.delete_story)();
-
-                if decision {
-                    self.db.delete_story(epic_id, story_id)
+                if (self.prompts.delete_story)() {
+                    self.db
+                        .delete_story(epic_id, story_id)
                         .with_context(|| anyhow!("Failed to delete story!"))?;
+
+                    if !self.pages.is_empty() {
+                        self.pages.pop();
+                    }
                 }
             }
             Action::Exit => {
                 self.pages.clear();
-            },
+            }
         }
 
         Ok(())
@@ -106,12 +125,17 @@ impl Navigator {
 
 #[cfg(test)]
 mod tests {
-    use crate::{db::test_utils::MockDB, models::{Epic, Status, Story}};
     use super::*;
+    use crate::{
+        db::test_utils::MockDB,
+        models::{Epic, Status, Story},
+    };
 
     #[test]
     fn should_start_on_home_page() {
-        let db = Rc::new(JiraDatabase { database: Box::new(MockDB::new()) });
+        let db = Rc::new(JiraDatabase {
+            database: Box::new(MockDB::new()),
+        });
         let nav = Navigator::new(db);
 
         assert_eq!(nav.get_page_count(), 1);
@@ -124,18 +148,25 @@ mod tests {
 
     #[test]
     fn handle_action_should_navigate_pages() {
-        let db = Rc::new(JiraDatabase { database: Box::new(MockDB::new()) });
+        let db = Rc::new(JiraDatabase {
+            database: Box::new(MockDB::new()),
+        });
 
         let mut nav = Navigator::new(db);
-        
-        nav.handle_action(Action::NavigateToEpicDetail { epic_id: 1 }).unwrap();
+
+        nav.handle_action(Action::NavigateToEpicDetail { epic_id: 1 })
+            .unwrap();
         assert_eq!(nav.get_page_count(), 2);
 
         let current_page = nav.get_current_page().unwrap();
         let epic_detail_page = current_page.as_any().downcast_ref::<EpicDetail>();
         assert_eq!(epic_detail_page.is_some(), true);
 
-        nav.handle_action(Action::NavigateToStoryDetail { epic_id: 1, story_id: 2 }).unwrap();
+        nav.handle_action(Action::NavigateToStoryDetail {
+            epic_id: 1,
+            story_id: 2,
+        })
+        .unwrap();
         assert_eq!(nav.get_page_count(), 3);
 
         let current_page = nav.get_current_page().unwrap();
@@ -165,12 +196,19 @@ mod tests {
 
     #[test]
     fn handle_action_should_clear_pages_on_exit() {
-        let db = Rc::new(JiraDatabase { database: Box::new(MockDB::new()) });
+        let db = Rc::new(JiraDatabase {
+            database: Box::new(MockDB::new()),
+        });
 
         let mut nav = Navigator::new(db);
-        
-        nav.handle_action(Action::NavigateToEpicDetail { epic_id: 1 }).unwrap();
-        nav.handle_action(Action::NavigateToStoryDetail { epic_id: 1, story_id: 2 }).unwrap();
+
+        nav.handle_action(Action::NavigateToEpicDetail { epic_id: 1 })
+            .unwrap();
+        nav.handle_action(Action::NavigateToStoryDetail {
+            epic_id: 1,
+            story_id: 2,
+        })
+        .unwrap();
         nav.handle_action(Action::Exit).unwrap();
 
         assert_eq!(nav.get_page_count(), 0);
@@ -178,7 +216,9 @@ mod tests {
 
     #[test]
     fn handle_action_should_handle_create_epic() {
-        let db = Rc::new(JiraDatabase { database: Box::new(MockDB::new()) });
+        let db = Rc::new(JiraDatabase {
+            database: Box::new(MockDB::new()),
+        });
 
         let mut nav = Navigator::new(Rc::clone(&db));
 
@@ -186,7 +226,7 @@ mod tests {
         prompts.create_epic = Box::new(|| Epic::new("name".to_owned(), "description".to_owned()));
 
         nav.set_prompts(prompts);
-        
+
         nav.handle_action(Action::CreateEpic).unwrap();
 
         let db_state = db.read_db().unwrap();
@@ -199,8 +239,12 @@ mod tests {
 
     #[test]
     fn handle_action_should_handle_update_epic() {
-        let db = Rc::new(JiraDatabase { database: Box::new(MockDB::new()) });
-        let epic_id = db.create_epic(Epic::new("".to_owned(), "".to_owned())).unwrap();
+        let db = Rc::new(JiraDatabase {
+            database: Box::new(MockDB::new()),
+        });
+        let epic_id = db
+            .create_epic(Epic::new("".to_owned(), "".to_owned()))
+            .unwrap();
 
         let mut nav = Navigator::new(Rc::clone(&db));
 
@@ -208,17 +252,25 @@ mod tests {
         prompts.update_status = Box::new(|| Some(Status::InProgress));
 
         nav.set_prompts(prompts);
-        
-        nav.handle_action(Action::UpdateEpicStatus { epic_id }).unwrap();
+
+        nav.handle_action(Action::UpdateEpicStatus { epic_id })
+            .unwrap();
 
         let db_state = db.read_db().unwrap();
-        assert_eq!(db_state.epics.get(&epic_id).unwrap().status, Status::InProgress);
+        assert_eq!(
+            db_state.epics.get(&epic_id).unwrap().status,
+            Status::InProgress
+        );
     }
 
     #[test]
     fn handle_action_should_handle_delete_epic() {
-        let db = Rc::new(JiraDatabase { database: Box::new(MockDB::new()) });
-        let epic_id = db.create_epic(Epic::new("".to_owned(), "".to_owned())).unwrap();
+        let db = Rc::new(JiraDatabase {
+            database: Box::new(MockDB::new()),
+        });
+        let epic_id = db
+            .create_epic(Epic::new("".to_owned(), "".to_owned()))
+            .unwrap();
 
         let mut nav = Navigator::new(Rc::clone(&db));
 
@@ -226,7 +278,7 @@ mod tests {
         prompts.delete_epic = Box::new(|| true);
 
         nav.set_prompts(prompts);
-        
+
         nav.handle_action(Action::DeleteEpic { epic_id }).unwrap();
 
         let db_state = db.read_db().unwrap();
@@ -235,8 +287,12 @@ mod tests {
 
     #[test]
     fn handle_action_should_handle_create_story() {
-        let db = Rc::new(JiraDatabase { database: Box::new(MockDB::new()) });
-        let epic_id = db.create_epic(Epic::new("".to_owned(), "".to_owned())).unwrap();
+        let db = Rc::new(JiraDatabase {
+            database: Box::new(MockDB::new()),
+        });
+        let epic_id = db
+            .create_epic(Epic::new("".to_owned(), "".to_owned()))
+            .unwrap();
 
         let mut nav = Navigator::new(Rc::clone(&db));
 
@@ -244,7 +300,7 @@ mod tests {
         prompts.create_story = Box::new(|| Story::new("name".to_owned(), "description".to_owned()));
 
         nav.set_prompts(prompts);
-        
+
         nav.handle_action(Action::CreateStory { epic_id }).unwrap();
 
         let db_state = db.read_db().unwrap();
@@ -257,9 +313,15 @@ mod tests {
 
     #[test]
     fn handle_action_should_handle_update_story() {
-        let db = Rc::new(JiraDatabase { database: Box::new(MockDB::new()) });
-        let epic_id = db.create_epic(Epic::new("".to_owned(), "".to_owned())).unwrap();
-        let story_id = db.create_story(Story::new("".to_owned(), "".to_owned()), epic_id).unwrap();
+        let db = Rc::new(JiraDatabase {
+            database: Box::new(MockDB::new()),
+        });
+        let epic_id = db
+            .create_epic(Epic::new("".to_owned(), "".to_owned()))
+            .unwrap();
+        let story_id = db
+            .create_story(Story::new("".to_owned(), "".to_owned()), epic_id)
+            .unwrap();
 
         let mut nav = Navigator::new(Rc::clone(&db));
 
@@ -267,18 +329,28 @@ mod tests {
         prompts.update_status = Box::new(|| Some(Status::InProgress));
 
         nav.set_prompts(prompts);
-        
-        nav.handle_action(Action::UpdateStoryStatus { story_id }).unwrap();
+
+        nav.handle_action(Action::UpdateStoryStatus { story_id })
+            .unwrap();
 
         let db_state = db.read_db().unwrap();
-        assert_eq!(db_state.stories.get(&story_id).unwrap().status, Status::InProgress);
+        assert_eq!(
+            db_state.stories.get(&story_id).unwrap().status,
+            Status::InProgress
+        );
     }
 
     #[test]
     fn handle_action_should_handle_delete_story() {
-        let db = Rc::new(JiraDatabase { database: Box::new(MockDB::new()) });
-        let epic_id = db.create_epic(Epic::new("".to_owned(), "".to_owned())).unwrap();
-        let story_id = db.create_story(Story::new("".to_owned(), "".to_owned()), epic_id).unwrap();
+        let db = Rc::new(JiraDatabase {
+            database: Box::new(MockDB::new()),
+        });
+        let epic_id = db
+            .create_epic(Epic::new("".to_owned(), "".to_owned()))
+            .unwrap();
+        let story_id = db
+            .create_story(Story::new("".to_owned(), "".to_owned()), epic_id)
+            .unwrap();
 
         let mut nav = Navigator::new(Rc::clone(&db));
 
@@ -286,8 +358,9 @@ mod tests {
         prompts.delete_story = Box::new(|| true);
 
         nav.set_prompts(prompts);
-        
-        nav.handle_action(Action::DeleteStory { epic_id, story_id }).unwrap();
+
+        nav.handle_action(Action::DeleteStory { epic_id, story_id })
+            .unwrap();
 
         let db_state = db.read_db().unwrap();
         assert_eq!(db_state.stories.len(), 0);
